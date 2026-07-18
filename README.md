@@ -1,90 +1,41 @@
 # KOReader WeTao/DEXP E-Ink refresh
 
-Внешний плагин KOReader для полного обновления E-Ink-экрана на DEXP M8 Prudentia / WeTao Book8. Он добавляет отдельное действие:
+![DEXP/WeTao e-reader running KOReader with manga](assets/koreader-wetao-eink-refresh-hero.png)
 
-> **Full E-Ink refresh (WeTao/DEXP)**
+**RU** — Плагин для DEXP M8 Prudentia / **WeTao Book8** (Android 8.1), добавляющий действие **Full E-Ink refresh (WeTao/DEXP)**. Проверен на устройстве.
 
-Плагин не заменяет штатное действие KOReader **Full E-Ink refresh**. Он напрямую повторяет механизм заводского приложения `com.wetao.floatball`: создаёт Android `Intent` с action `com.flash.force_epd_full` и вызывает `Activity.sendBroadcast()` через JNI-мост KOReader.
+Это **не** замена встроенного действия KOReader *Full E-Ink refresh*, **не** глобальная кнопка обновления для всех Android-приложений и **не** плагин для Kindle, Kobo, Boox или других читалок.
 
-Root, ADB и отдельный APK не нужны.
+**EN** — A plugin for DEXP M8 Prudentia / **WeTao Book8** (Android 8.1) that adds **Full E-Ink refresh (WeTao/DEXP)**. Verified on-device.
 
-## Совместимость
+It does **not** replace KOReader's built-in *Full E-Ink refresh*, provide a global refresh button for all Android apps, or support Kindle, Kobo, Boox, and other e-readers.
 
-| Устройство / прошивка | Статус |
-| --- | --- |
-| DEXP M8 Prudentia, Android 8.1; в Google Play определяется как **WeTao Book8** | Целевая модель. Команда подтверждена декомпиляцией заводского FloatBall APK; сам плагин ожидает первой проверки на устройстве. |
-| Другие WeTao / Flash-совместимые Android-читалки | Может работать, только если прошивка обрабатывает broadcast `com.flash.force_epd_full`. |
-| Kindle, Kobo, PocketBook, reMarkable, Onyx Boox и обычные Android-устройства | Поддержка не заявлена. У них другие E-Ink API или вообще нет E-Ink-контроллера. |
+## Install on Android / Установка на Android
 
-Плагин автоматически отключается не на Android. Наличие Android само по себе не означает совместимость: нужный broadcast является нестандартной частью конкретной прошивки.
-
-## Установка на Android из GitHub Releases
-
-1. Откройте страницу **Releases** этого репозитория и скачайте `wetaoeinkrefresh.koplugin-<версия>.zip` из последнего релиза. Файл `.sha256` рядом позволяет проверить целостность архива.
-2. Полностью закройте KOReader.
-3. Распакуйте ZIP в папку `koreader/plugins` во внутренней памяти читалки.
-4. Проверьте итоговый путь. Он должен выглядеть так:
+1. Download / Скачайте `wetaoeinkrefresh.koplugin-<version>.zip` from [Releases](../../releases/latest).
+2. Close KOReader and extract the ZIP into `koreader/plugins` on the device. / Закройте KOReader и распакуйте ZIP в `koreader/plugins` на устройстве.
+3. The final path / Итоговый путь:
 
    ```text
-   koreader/
-   └── plugins/
-       └── wetaoeinkrefresh.koplugin/
-           ├── _meta.lua
-           ├── main.lua
-           └── wetaoepd.lua
+   koreader/plugins/wetaoeinkrefresh.koplugin/main.lua
    ```
 
-   Частая ошибка — лишний уровень каталога вроде `plugins/repository-main/wetaoeinkrefresh.koplugin`.
-5. Запустите KOReader. Откройте **Tools → Plugin management → User plugins** и убедитесь, что **WeTao/DEXP E-Ink refresh** включён. После изменения состояния перезапустите KOReader.
-6. В меню инструментов выберите **Full E-Ink refresh (WeTao/DEXP)**. Экран должен выполнить полный цикл с характерным миганием.
+4. Start KOReader and enable **WeTao/DEXP E-Ink refresh** in **Tools → Plugin management → User plugins**. / Запустите KOReader и включите плагин в этом меню.
+5. Use **Full E-Ink refresh (WeTao/DEXP)** from the tools menu, or assign it to a gesture / hotkey. / Используйте пункт меню или назначьте действие на жест / горячую клавишу.
 
-Официальная коллекция сторонних плагинов KOReader также устанавливает плагины копированием папки `.koplugin` в `koreader/plugins`.
+To update, replace the `wetaoeinkrefresh.koplugin` folder and restart KOReader. To remove it, delete that folder. / Для обновления замените эту папку и перезапустите KOReader; для удаления — удалите её.
 
-### Установка прямо из исходников
+## Compatibility / Совместимость
 
-Скачайте репозиторий через **Code → Download ZIP**, распакуйте его и скопируйте только папку `wetaoeinkrefresh.koplugin` в `koreader/plugins`. Файлы репозитория `README.md`, `spec`, `scripts` и `.github` на устройство копировать не требуется.
+| Device | Status |
+| --- | --- |
+| DEXP M8 Prudentia / WeTao Book8, Android 8.1 | Verified / Проверено |
+| Other WeTao / Flash firmware | Untested / Не проверено |
 
-### Обновление и удаление
+## How it works / Как работает
 
-- Для обновления замените существующую папку `wetaoeinkrefresh.koplugin` содержимым новой версии и перезапустите KOReader.
-- Для удаления закройте KOReader, удалите `koreader/plugins/wetaoeinkrefresh.koplugin` и снова запустите KOReader.
+The plugin sends the vendor-specific Android broadcast `com.flash.force_epd_full` through KOReader's Android JNI bridge. The action was recovered from the stock `com.wetao.floatball` application.
 
-## Назначение на жест или аппаратную кнопку
+Плагин отправляет фирменный Android broadcast `com.flash.force_epd_full` через JNI-мост KOReader. Команда была найдена в заводском приложении `com.wetao.floatball`.
 
-Плагин регистрирует действие в общем Dispatcher KOReader с идентификатором `wetao_full_eink_refresh`. Поэтому его можно выбрать в менеджере жестов/горячих клавиш как **Full E-Ink refresh (WeTao/DEXP)**. Точное расположение настройки зависит от версии KOReader и активных плагинов **Gestures** / **Hotkeys**.
-
-Для перехвата клавиш громкости во всех Android-приложениях этот плагин не подходит: он работает только пока открыт KOReader. Глобальная кнопка потребует отдельного Android-приложения или системной службы.
-
-## Если экран не моргает
-
-1. Убедитесь, что выбран пункт с пометкой **(WeTao/DEXP)**, а не штатный **Full E-Ink refresh**.
-2. Проверьте, что папка лежит непосредственно в `koreader/plugins` и плагин включён.
-3. Если появилось сообщение `Android rejected ...`, прошивка запретила broadcast процессу KOReader. Приложите к issue версию KOReader и файл `koreader/crash.log`; при возможности полезен и `adb logcat` за момент нажатия.
-4. Если сообщения нет, но экран не меняется, broadcast был отправлен, однако прошивка его не обработала. Это может означать другую action-команду либо проверку отправителя/системной подписи.
-
-Сбой `/system/bin/am broadcast ...` с кодом 225 не доказывает, что JNI-вариант тоже не сработает: `am` обращается к Activity Manager через отдельный shell-путь, тогда как плагин вызывает Android API из Activity KOReader.
-
-## Разработка
-
-Требуются LuaJIT, `zip` и `unzip`:
-
-```sh
-luajit spec/run.lua
-bash spec/package.sh
-bash scripts/package.sh
-```
-
-Каждый push и pull request запускает эти проверки в GitHub Actions. Push тега вида `v0.1.0` собирает ZIP и SHA-256 и публикует их в GitHub Release.
-
-## English summary
-
-This external KOReader plugin adds **Full E-Ink refresh (WeTao/DEXP)**. It targets the DEXP M8 Prudentia, reported by Google Play as WeTao Book8, running Android 8.1. The plugin sends the vendor-specific `com.flash.force_epd_full` broadcast directly through KOReader's Android JNI bridge. Extract the release ZIP into `koreader/plugins`, restart KOReader, enable the user plugin, and invoke the new action. Other devices are supported only if their firmware implements the same vendor broadcast.
-
-## Источники и лицензия
-
-- [Обсуждение DEXP M8 Prudentia на 4PDA](https://4pda.to/forum/index.php?showtopic=1046269)
-- [KOReader](https://github.com/koreader/koreader)
-- [Коллекция сторонних плагинов KOReader](https://github.com/koreader/contrib)
-- [Android LuaJIT launcher KOReader](https://github.com/koreader/android-luajit-launcher)
-
-Код распространяется по лицензии MIT. См. [LICENSE](LICENSE).
+MIT License · [4PDA device topic](https://4pda.to/forum/index.php?showtopic=1046269) · [KOReader](https://github.com/koreader/koreader)
