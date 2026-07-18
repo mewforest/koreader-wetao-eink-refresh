@@ -195,6 +195,116 @@ test("fails gracefully when KOReader does not expose its Android JNI bridge", fu
     assert_contains(err, "JNI bridge", "send error")
 end)
 
+local function load_plugin(is_android, send_result, send_error)
+    local state = {
+        registered_actions = {},
+        shown_widgets = {},
+        send_count = 0,
+    }
+
+    package.loaded.device = {
+        isAndroid = function()
+            return is_android
+        end,
+    }
+    package.loaded.dispatcher = {
+        registerAction = function(_, name, definition)
+            state.registered_actions[name] = definition
+        end,
+    }
+    package.loaded.gettext = function(text)
+        return text
+    end
+    package.loaded["ui/uimanager"] = {
+        show = function(_, widget)
+            table.insert(state.shown_widgets, widget)
+        end,
+    }
+    package.loaded["ui/widget/infomessage"] = {
+        new = function(_, options)
+            return options
+        end,
+    }
+    package.loaded["ui/widget/container/widgetcontainer"] = {
+        extend = function(_, definition)
+            return definition
+        end,
+    }
+    package.loaded.wetaoepd = {
+        send = function()
+            state.send_count = state.send_count + 1
+            return send_result, send_error
+        end,
+    }
+
+    local plugin = dofile("wetaoeinkrefresh.koplugin/main.lua")
+    return plugin, state
+end
+
+test("disables the plugin outside Android", function()
+    local plugin = load_plugin(false, true)
+
+    assert_true(plugin.disabled, "disabled flag")
+end)
+
+test("registers a distinct Dispatcher action and More Tools menu item", function()
+    local plugin, state = load_plugin(true, true)
+    plugin.ui = {
+        menu = {
+            registerToMainMenu = function(_, instance)
+                state.registered_menu_instance = instance
+            end,
+        },
+    }
+
+    plugin:init()
+    local menu_items = {}
+    plugin:addToMainMenu(menu_items)
+
+    local action = state.registered_actions.wetao_full_eink_refresh
+    assert_equal(plugin, state.registered_menu_instance, "registered menu instance")
+    assert_equal("WetaoFullEinkRefresh", action.event, "Dispatcher event")
+    assert_equal("Full E-Ink refresh (WeTao/DEXP)", action.title, "Dispatcher title")
+    assert_true(action.general, "general Dispatcher action")
+    assert_equal(
+        "Full E-Ink refresh (WeTao/DEXP)",
+        menu_items.wetao_eink_refresh.text,
+        "menu title"
+    )
+    assert_equal("more_tools", menu_items.wetao_eink_refresh.sorting_hint, "menu location")
+
+    menu_items.wetao_eink_refresh.callback()
+
+    assert_equal(1, state.send_count, "broadcast count")
+    assert_equal(0, #state.shown_widgets, "success popups")
+end)
+
+test("shows a diagnostic message when Android rejects the broadcast", function()
+    local plugin, state = load_plugin(true, false, "Android rejected the broadcast")
+
+    local handled = plugin:onWetaoFullEinkRefresh()
+
+    assert_true(handled, "event handled")
+    assert_equal(1, state.send_count, "broadcast count")
+    assert_equal(1, #state.shown_widgets, "error popups")
+    assert_contains(
+        state.shown_widgets[1].text,
+        "Android rejected the broadcast",
+        "error popup text"
+    )
+end)
+
+test("provides plugin metadata for KOReader's plugin manager", function()
+    package.loaded.gettext = function(text)
+        return text
+    end
+
+    local metadata = dofile("wetaoeinkrefresh.koplugin/_meta.lua")
+
+    assert_equal("WeTao/DEXP E-Ink refresh", metadata.fullname, "plugin fullname")
+    assert_contains(metadata.description, "com.flash.force_epd_full", "plugin description")
+end)
+
 io.write(string.format("\n%d tests, %d failures\n", tests_run, tests_failed))
 if tests_failed > 0 then
     os.exit(1)
