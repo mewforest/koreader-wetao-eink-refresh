@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y luajit zip unzip
+      - name: Run tests
+        run: |
+          luajit spec/run.lua
+          bash spec/package.sh
+      - name: Package plugin
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: bash scripts/package.sh dist "${RELEASE_VERSION#v}"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --generate-notes --title "${{ github.ref_name }}"

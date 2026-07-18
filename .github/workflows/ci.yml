@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test dependencies
+        run: sudo apt-get update && sudo apt-get install -y luajit zip unzip
+      - name: Run Lua tests
+        run: luajit spec/run.lua
+      - name: Test release packaging
+        run: bash spec/package.sh
+      - name: Build development artifact
+        run: bash scripts/package.sh dist "$(tr -d '[:space:]' < VERSION)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wetaoeinkrefresh-plugin
+          path: dist/
