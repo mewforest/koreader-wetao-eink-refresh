@@ -294,6 +294,40 @@ test("shows a diagnostic message when Android rejects the broadcast", function()
     )
 end)
 
+test("auto-refreshes on PageUpdate without consuming the event", function()
+    local plugin, state = load_plugin(true, true)
+    plugin.ui = {
+        menu = {
+            registerToMainMenu = function() end,
+        },
+    }
+
+    plugin:init()
+    local consumed = plugin:onPageUpdate(12)
+
+    assert_equal(nil, consumed, "PageUpdate must not be consumed")
+    assert_equal(1, state.send_count, "broadcast count")
+    assert_equal(0, #state.shown_widgets, "auto-refresh success popups")
+end)
+
+test("skips auto-refresh on document close PageUpdate(false)", function()
+    local plugin, state = load_plugin(true, true)
+
+    plugin:onPageUpdate(false)
+
+    assert_equal(0, state.send_count, "broadcast count on close")
+end)
+
+test("skips duplicate consecutive PageUpdate for the same page", function()
+    local plugin, state = load_plugin(true, true)
+
+    plugin:onPageUpdate(3)
+    plugin:onPageUpdate(3)
+    plugin:onPageUpdate(4)
+
+    assert_equal(2, state.send_count, "broadcast count for distinct pages")
+end)
+
 test("provides plugin metadata for KOReader's plugin manager", function()
     package.loaded.gettext = function(text)
         return text
