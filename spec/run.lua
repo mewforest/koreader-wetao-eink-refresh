@@ -200,6 +200,7 @@ local function load_plugin(is_android, send_result, send_error)
         registered_actions = {},
         shown_widgets = {},
         send_count = 0,
+        deferred_callbacks = {},
     }
 
     package.loaded.device = {
@@ -218,6 +219,11 @@ local function load_plugin(is_android, send_result, send_error)
     package.loaded["ui/uimanager"] = {
         show = function(_, widget)
             table.insert(state.shown_widgets, widget)
+        end,
+        -- Mirrors KOReader: tickAfterNext runs after the upcoming paint tick.
+        tickAfterNext = function(_, action)
+            table.insert(state.deferred_callbacks, action)
+            return action
         end,
     }
     package.loaded["ui/widget/infomessage"] = {
@@ -239,6 +245,14 @@ local function load_plugin(is_android, send_result, send_error)
 
     local plugin = dofile("wetaoeinkrefresh.koplugin/main.lua")
     return plugin, state
+end
+
+local function run_deferred(state)
+    local callbacks = state.deferred_callbacks
+    state.deferred_callbacks = {}
+    for _, action in ipairs(callbacks) do
+        action()
+    end
 end
 
 test("disables the plugin outside Android", function()
@@ -294,7 +308,7 @@ test("shows a diagnostic message when Android rejects the broadcast", function()
     )
 end)
 
-test("auto-refreshes on PageUpdate without consuming the event", function()
+test("defers PageUpdate refresh until after the next UI paint", function()
     local plugin, state = load_plugin(true, true)
     plugin.ui = {
         menu = {
@@ -306,14 +320,21 @@ test("auto-refreshes on PageUpdate without consuming the event", function()
     local consumed = plugin:onPageUpdate(12)
 
     assert_equal(nil, consumed, "PageUpdate must not be consumed")
-    assert_equal(1, state.send_count, "broadcast count")
+    assert_equal(0, state.send_count, "broadcast must wait for paint")
+    assert_equal(1, #state.deferred_callbacks, "tickAfterNext scheduled")
+
+    run_deferred(state)
+
+    assert_equal(1, state.send_count, "broadcast after paint")
     assert_equal(0, #state.shown_widgets, "auto-refresh success popups")
 end)
 
 test("skips auto-refresh on document close PageUpdate(false)", function()
     local plugin, state = load_plugin(true, true)
 
+    plugin:onPageUpdate(5)
     plugin:onPageUpdate(false)
+    run_deferred(state)
 
     assert_equal(0, state.send_count, "broadcast count on close")
 end)
@@ -325,7 +346,26 @@ test("skips duplicate consecutive PageUpdate for the same page", function()
     plugin:onPageUpdate(3)
     plugin:onPageUpdate(4)
 
-    assert_equal(2, state.send_count, "broadcast count for distinct pages")
+    assert_equal(2, #state.deferred_callbacks, "duplicate page does not reschedule")
+    run_deferred(state)
+
+    assert_equal(1, state.send_count, "only latest distinct page refreshes")
+end)
+
+test("cancels a stale deferred refresh when the page changes again", function()
+    local plugin, state = load_plugin(true, true)
+
+    plugin:onPageUpdate(1)
+    local first_wave = state.deferred_callbacks
+    state.deferred_callbacks = {}
+    plugin:onPageUpdate(2)
+    -- Stale callback from page 1 must not refresh after page 2 was requested.
+    for _, action in ipairs(first_wave) do
+        action()
+    end
+    assert_equal(0, state.send_count, "stale deferred refresh suppressed")
+    run_deferred(state)
+    assert_equal(1, state.send_count, "only latest page refreshes")
 end)
 
 test("provides plugin metadata for KOReader's plugin manager", function()
