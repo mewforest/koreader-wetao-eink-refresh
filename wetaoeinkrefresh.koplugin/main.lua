@@ -19,6 +19,8 @@ local WetaoEInkRefresh = WidgetContainer:extend{
 }
 
 function WetaoEInkRefresh:init()
+    -- PageUpdate is delivered automatically via EventListener:handleEvent
+    -- (onPageUpdate). KOReader has no ui:registerEventListener API.
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
@@ -32,14 +34,32 @@ function WetaoEInkRefresh:onDispatcherRegisterActions()
     })
 end
 
+function WetaoEInkRefresh:doWetaoRefresh()
+    return WetaoEPD.send()
+end
+
 function WetaoEInkRefresh:onWetaoFullEinkRefresh()
-    local ok, err = WetaoEPD.send()
+    local ok, err = self:doWetaoRefresh()
     if not ok then
         UIManager:show(InfoMessage:new{
             text = _("WeTao/DEXP full E-Ink refresh failed: ") .. tostring(err),
         })
     end
     return true
+end
+
+-- Official KOReader page-turn hook: ReaderUI broadcasts Event("PageUpdate", pageno).
+-- Widgets/plugins that define onPageUpdate receive it through EventListener.
+function WetaoEInkRefresh:onPageUpdate(pageno)
+    if pageno == false then
+        -- Document close sentinel used by ReaderStatistics / ReaderUI.
+        return
+    end
+    if self._last_page == pageno then
+        return
+    end
+    self._last_page = pageno
+    self:doWetaoRefresh()
 end
 
 function WetaoEInkRefresh:addToMainMenu(menu_items)

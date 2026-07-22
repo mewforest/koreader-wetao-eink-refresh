@@ -4,7 +4,7 @@
 
 ![DEXP/WeTao e-reader running KOReader with manga](assets/koreader-wetao-eink-refresh-hero.png)
 
-A plugin for DEXP M8 Prudentia / **WeTao Book8** (Android 8.1) that adds **Full E-Ink refresh (WeTao/DEXP)**. Verified on-device.
+A plugin for DEXP M8 Prudentia / **WeTao Book8** (Android 8.1) that runs a full E-Ink refresh on every page turn, and also adds **Full E-Ink refresh (WeTao/DEXP)** for manual use. Verified on-device.
 
 ## Install on Android
 
