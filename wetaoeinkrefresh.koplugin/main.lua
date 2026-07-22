@@ -48,18 +48,27 @@ function WetaoEInkRefresh:onWetaoFullEinkRefresh()
     return true
 end
 
--- Official KOReader page-turn hook: ReaderUI broadcasts Event("PageUpdate", pageno).
--- Widgets/plugins that define onPageUpdate receive it through EventListener.
+-- Official KOReader page-turn hook: ReaderUI broadcasts Event("PageUpdate", pageno)
+-- during input handling, *before* UIManager:_repaint paints the new page.
+-- Refreshing immediately would flash the previous page; tickAfterNext runs after that paint.
 function WetaoEInkRefresh:onPageUpdate(pageno)
     if pageno == false then
         -- Document close sentinel used by ReaderStatistics / ReaderUI.
+        self._refresh_gen = (self._refresh_gen or 0) + 1
         return
     end
     if self._last_page == pageno then
         return
     end
     self._last_page = pageno
-    self:doWetaoRefresh()
+    self._refresh_gen = (self._refresh_gen or 0) + 1
+    local gen = self._refresh_gen
+    UIManager:tickAfterNext(function()
+        if gen ~= self._refresh_gen then
+            return
+        end
+        self:doWetaoRefresh()
+    end)
 end
 
 function WetaoEInkRefresh:addToMainMenu(menu_items)
