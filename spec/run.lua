@@ -195,12 +195,37 @@ test("fails gracefully when KOReader does not expose its Android JNI bridge", fu
     assert_contains(err, "JNI bridge", "send error")
 end)
 
-local function load_plugin(is_android, send_result, send_error)
+local function load_plugin(is_android, send_result, send_error, initial_settings)
     local state = {
         registered_actions = {},
         shown_widgets = {},
         send_count = 0,
         deferred_callbacks = {},
+        scheduled_callbacks = {},
+        spin_widgets = {},
+        settings = initial_settings or {},
+    }
+
+    G_reader_settings = {
+        nilOrTrue = function(_, key)
+            return state.settings[key] ~= false
+        end,
+        isTrue = function(_, key)
+            return state.settings[key] == true
+        end,
+        saveSetting = function(_, key, value)
+            state.settings[key] = value
+        end,
+        delSetting = function(_, key)
+            state.settings[key] = nil
+        end,
+        readSetting = function(_, key, default)
+            local value = state.settings[key]
+            if value == nil then
+                return default
+            end
+            return value
+        end,
     }
 
     package.loaded.device = {
@@ -225,9 +250,22 @@ local function load_plugin(is_android, send_result, send_error)
             table.insert(state.deferred_callbacks, action)
             return action
         end,
+        scheduleIn = function(_, delay, action)
+            table.insert(state.scheduled_callbacks, {
+                delay = delay,
+                action = action,
+            })
+            return action
+        end,
     }
     package.loaded["ui/widget/infomessage"] = {
         new = function(_, options)
+            return options
+        end,
+    }
+    package.loaded["ui/widget/spinwidget"] = {
+        new = function(_, options)
+            table.insert(state.spin_widgets, options)
             return options
         end,
     }
@@ -252,6 +290,14 @@ local function run_deferred(state)
     state.deferred_callbacks = {}
     for _, action in ipairs(callbacks) do
         action()
+    end
+end
+
+local function run_scheduled(state)
+    local callbacks = state.scheduled_callbacks
+    state.scheduled_callbacks = {}
+    for _, scheduled in ipairs(callbacks) do
+        scheduled.action()
     end
 end
 
@@ -326,7 +372,105 @@ test("defers PageUpdate refresh until after the next UI paint", function()
     run_deferred(state)
 
     assert_equal(1, state.send_count, "broadcast after paint")
+    assert_equal(0, #state.scheduled_callbacks, "single mode delayed callbacks")
     assert_equal(0, #state.shown_widgets, "auto-refresh success popups")
+end)
+
+test("skips PageUpdate refresh when automatic refresh is disabled", function()
+    local plugin, state = load_plugin(true, true, nil, {
+        wetao_refresh_after_page_turn = false,
+    })
+
+    plugin:onPageUpdate(12)
+
+    assert_equal(0, #state.deferred_callbacks, "post-paint callbacks")
+    assert_equal(0, state.send_count, "broadcast count")
+end)
+
+test("schedules the second refresh half a second after the first", function()
+    local plugin, state = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+    })
+
+    plugin:onPageUpdate(12)
+    run_deferred(state)
+
+    assert_equal(1, state.send_count, "first broadcast count")
+    assert_equal(1, #state.scheduled_callbacks, "delayed callbacks")
+    assert_equal(0.5, state.scheduled_callbacks[1].delay, "second refresh delay")
+
+    run_scheduled(state)
+
+    assert_equal(2, state.send_count, "total broadcast count")
+end)
+
+test("uses the configured double refresh delay in milliseconds", function()
+    local plugin, state = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+        wetao_double_refresh_delay_ms = 750,
+    })
+
+    plugin:onPageUpdate(12)
+    run_deferred(state)
+
+    assert_equal(1, #state.scheduled_callbacks, "delayed callbacks")
+    assert_equal(0.75, state.scheduled_callbacks[1].delay, "configured delay")
+end)
+
+test("clamps unexpected double refresh delay settings", function()
+    local plugin_low, state_low = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+        wetao_double_refresh_delay_ms = 50,
+    })
+    plugin_low:onPageUpdate(12)
+    run_deferred(state_low)
+    assert_equal(0.1, state_low.scheduled_callbacks[1].delay, "minimum delay")
+
+    local plugin_high, state_high = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+        wetao_double_refresh_delay_ms = 5000,
+    })
+    plugin_high:onPageUpdate(12)
+    run_deferred(state_high)
+    assert_equal(3, state_high.scheduled_callbacks[1].delay, "maximum delay")
+end)
+
+test("cancels the delayed second refresh when the document closes", function()
+    local plugin, state = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+    })
+
+    plugin:onPageUpdate(12)
+    run_deferred(state)
+    plugin:onPageUpdate(false)
+    run_scheduled(state)
+
+    assert_equal(1, state.send_count, "broadcast count")
+end)
+
+test("cancels the delayed second refresh when a newer page is requested", function()
+    local plugin, state = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+    })
+
+    plugin:onPageUpdate(12)
+    run_deferred(state)
+    plugin:onPageUpdate(13)
+    run_scheduled(state)
+
+    assert_equal(1, state.send_count, "broadcast count before newer page paint")
+end)
+
+test("does not schedule a second refresh when the first broadcast fails", function()
+    local plugin, state = load_plugin(true, false, "Android rejected the broadcast", {
+        wetao_double_refresh_after_page_turn = true,
+    })
+
+    plugin:onPageUpdate(12)
+    run_deferred(state)
+
+    assert_equal(1, state.send_count, "broadcast count")
+    assert_equal(0, #state.scheduled_callbacks, "delayed callbacks")
 end)
 
 test("skips auto-refresh on document close PageUpdate(false)", function()
@@ -366,6 +510,73 @@ test("cancels a stale deferred refresh when the page changes again", function()
     assert_equal(0, state.send_count, "stale deferred refresh suppressed")
     run_deferred(state)
     assert_equal(1, state.send_count, "only latest page refreshes")
+end)
+
+test("provides persistent automatic and double refresh menu settings", function()
+    local plugin, state = load_plugin(true, true)
+    local menu_items = {}
+
+    plugin:addToMainMenu(menu_items)
+
+    local automatic = menu_items.wetao_refresh_after_page_turn
+    local double = menu_items.wetao_double_refresh_after_page_turn
+    assert_equal("Refresh after page turn", automatic.text, "automatic setting title")
+    assert_equal("Double refresh after page turn (beta)", double.text, "double setting title")
+    assert_true(automatic.checked_func(), "automatic setting default")
+    assert_equal(false, double.checked_func(), "double setting default")
+
+    automatic.callback()
+    assert_equal(false, state.settings.wetao_refresh_after_page_turn, "automatic disabled")
+    automatic.callback()
+    assert_equal(nil, state.settings.wetao_refresh_after_page_turn, "automatic default restored")
+
+    double.callback()
+    assert_true(state.settings.wetao_double_refresh_after_page_turn, "double enabled")
+    double.callback()
+    assert_equal(nil, state.settings.wetao_double_refresh_after_page_turn, "double default restored")
+end)
+
+test("configures and persists the double refresh delay with SpinWidget", function()
+    local plugin, state = load_plugin(true, true, nil, {
+        wetao_double_refresh_after_page_turn = true,
+    })
+    local menu_items = {}
+    plugin:addToMainMenu(menu_items)
+
+    local delay_item = menu_items.wetao_double_refresh_delay
+    assert_equal("Double refresh delay: 500 ms", delay_item.text_func(), "delay menu text")
+    assert_true(delay_item.enabled_func(), "delay menu enabled")
+    assert_true(delay_item.keep_menu_open, "delay menu stays open")
+
+    state.settings.wetao_double_refresh_after_page_turn = false
+    assert_equal(false, delay_item.enabled_func(), "delay menu disabled")
+    state.settings.wetao_double_refresh_after_page_turn = true
+
+    local menu_updates = 0
+    delay_item.callback({
+        updateItems = function()
+            menu_updates = menu_updates + 1
+        end,
+    })
+
+    local spin = state.spin_widgets[1]
+    assert_equal(spin, state.shown_widgets[1], "shown SpinWidget")
+    assert_equal("Double refresh delay (ms)", spin.title_text, "SpinWidget title")
+    assert_contains(spin.info_text, "unstable", "SpinWidget info")
+    assert_equal("Set delay", spin.ok_text, "SpinWidget apply text")
+    assert_equal(500, spin.value, "SpinWidget value")
+    assert_equal(100, spin.value_min, "SpinWidget minimum")
+    assert_equal(3000, spin.value_max, "SpinWidget maximum")
+    assert_equal(50, spin.value_step, "SpinWidget step")
+    assert_equal(250, spin.value_hold_step, "SpinWidget hold step")
+    assert_equal("ms", spin.unit, "SpinWidget unit")
+    assert_equal(500, spin.default_value, "SpinWidget default")
+
+    spin.callback({ value = 750 })
+
+    assert_equal(750, state.settings.wetao_double_refresh_delay_ms, "saved delay")
+    assert_equal(1, menu_updates, "menu updates")
+    assert_equal("Double refresh delay: 750 ms", delay_item.text_func(), "updated menu text")
 end)
 
 test("provides plugin metadata for KOReader's plugin manager", function()
